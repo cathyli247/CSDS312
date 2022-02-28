@@ -1,0 +1,9 @@
+.DS_Store
+.idea/
+.ipynb_checkpoints/
+"logs_new6\\Model-1646030966/"
+sample_submission.csv
+test.csv
+test_images/
+train.csv
+train_images/
