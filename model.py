@@ -193,16 +193,14 @@ model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
     metrics=['binary_accuracy'])
 
-filepath = "weights_five.hdf5"
-
-checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', save_best_only=True, mode='min')
+checkpoint = tf.keras.callbacks.ModelCheckpoint(SAVED_MODEL_NAME, monitor='val_loss', save_best_only=True, mode='min')
 earlystop = EarlyStopping(patience=5, monitor='val_loss', min_delta=0.0005)
 
 model.summary()
 #
 history = model.fit(train_generator,
                     batch_size=BATCH_SIZE,
-                    epochs=20,
+                    epochs=25,
                     validation_data=val_generator,
                     validation_batch_size=BATCH_SIZE,
                     callbacks=[earlystop, checkpoint])
@@ -220,7 +218,7 @@ model.compile(
 
 history = model.fit(train_generator,
                     batch_size=BATCH_SIZE,
-                    epochs=25,
+                    epochs=35,
                     validation_data=val_generator,
                     validation_batch_size=BATCH_SIZE,
                     callbacks=[earlystop, checkpoint])
