@@ -1,7 +1,7 @@
 import os
 import sys
 
-from efficientnet.keras import EfficientNetB5
+# from efficientnet.keras import EfficientNetB5
 
 import cv2
 import time
@@ -26,18 +26,24 @@ from keras.models import Sequential
 from keras.layers import Layer, InputSpec
 from keras.utils.generic_utils import get_custom_objects
 from keras.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, TensorBoard
-from keras.layers import Dense, Conv2D, Flatten, GlobalAveragePooling2D, Dropout
+from keras.layers import Dense, Conv2D, Flatten, GlobalAveragePooling2D, Dropout, BatchNormalization
 from keras.preprocessing.image import ImageDataGenerator
 from sklearn.metrics import cohen_kappa_score
 
-IMG_WIDTH = 456
-IMG_HEIGHT = 456
+IMG_WIDTH = 224
+IMG_HEIGHT = 224
 CHANNELS = 3
 
-TRAIN_DF_PATH = "train.csv"
-TEST_DF_PATH = 'test.csv'
-TRAIN_IMG_PATH = "train_images/"
-TEST_IMG_PATH = 'test_images/'
+# TRAIN_DF_PATH = "train.csv"
+# TEST_DF_PATH = 'test.csv'
+# TRAIN_IMG_PATH = "train_images/"
+# TEST_IMG_PATH = 'test_images/'
+# SAVED_MODEL_NAME = 'effnet_modelB5.h5'
+
+TRAIN_DF_PATH = "./Data/train.csv"
+TEST_DF_PATH = './Data/test.csv'
+TRAIN_IMG_PATH = "./Data/train_images/"
+TEST_IMG_PATH = './Data/test_images/'
 SAVED_MODEL_NAME = 'effnet_modelB5.h5'
 
 seed = 1234
@@ -61,7 +67,7 @@ test_df['id_code'] = test_df['id_code'] + ".png"
 print(f"Testing Images: {test_df.shape[0]}")
 display(test_df.head())
 
-BATCH_SIZE = 4
+BATCH_SIZE = 64
 
 def get_preds_and_labels(model, generator):
     """
@@ -82,35 +88,7 @@ def get_preds_and_labels(model, generator):
     # Flatten list of numpy arrays
     return np.concatenate(preds).ravel(), np.concatenate(labels).ravel()
 
-class Metrics(Callback):
-    """
-    A custom Keras callback for saving the best model
-    according to the Quadratic Weighted Kappa (QWK) metric
-    """
-    def on_train_begin(self, logs={}):
-        """
-        Initialize list of QWK scores on validation data
-        """
-        self.val_kappas = []
 
-    def on_epoch_end(self, epoch, logs={}):
-        """
-        Gets QWK score on the validation data
-
-        :param epoch: The current epoch number
-        """
-        # Get predictions and convert to integers
-        y_pred, labels = get_preds_and_labels(model, val_generator)
-        y_pred = np.rint(y_pred).astype(np.uint8).clip(0, 4)
-        # We can use sklearns implementation of QWK straight out of the box
-        # as long as we specify weights as 'quadratic'
-        _val_kappa = cohen_kappa_score(labels, y_pred, weights='quadratic')
-        self.val_kappas.append(_val_kappa)
-        print(f"val_kappa: {round(_val_kappa, 4)}")
-        if _val_kappa == max(self.val_kappas):
-            print("Validation Kappa has improved. Saving model.")
-            self.model.save(SAVED_MODEL_NAME)
-        return
 
 def crop_image_from_gray(img, tol=7):
     """
@@ -162,12 +140,11 @@ def preprocess_image(image, sigmaX=10):
     image = cv2.addWeighted (image,4, cv2.GaussianBlur(image, (0,0) ,sigmaX), -4, 128)
     return image
 
-train_datagen = ImageDataGenerator(rotation_range=360,
+train_datagen = ImageDataGenerator(rotation_range=45,
                                    horizontal_flip=True,
                                    vertical_flip=True,
                                    validation_split=0.15,
-                                   preprocessing_function=preprocess_image,
-                                   rescale=1 / 128.)
+                                   preprocessing_function=preprocess_image)
 
 train_generator = train_datagen.flow_from_dataframe(train_df,
                                                     x_col='id_code',
@@ -187,49 +164,69 @@ val_generator = train_datagen.flow_from_dataframe(train_df,
                                                   class_mode='raw',
                                                   subset='validation')
 
-effnet = EfficientNetB5(weights=None,
-                            include_top=False,
-                            input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
+effnet = tf.keras.applications.efficientnet.EfficientNetB0(weights="imagenet",
+                                                           include_top=False,
+                                                           input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
+
+# effnet = EfficientNetB5(weights=None,
+#                             include_top=False,
+#                             input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
 
 # effnet = tf.keras.applications.EfficientNetV2L(weights="imagenet",
 #                         include_top=False,
 #                         input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
 
+# effnet.load_weights('efficientnet-b5_imagenet_1000_notop.h5')
 
-
-effnet.load_weights('efficientnet-b5_imagenet_1000_notop.h5')
+effnet.trainable = False
 
 model = tf.keras.Sequential([
     effnet,
     tf.keras.layers.GlobalAveragePooling2D(),
     tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Dense(5, activation=elu),
+    # tf.keras.layers.Dense(5, activation=elu),
     tf.keras.layers.Dense(1, activation="linear"),
 ])
 
 model.compile(
     loss='binary_crossentropy',
-    optimizer=tf.keras.optimizers.Adam(lr=0.00005))
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
+    metrics=['binary_accuracy'])
 
 filepath = "weights_five.hdf5"
-kappa_metrics = Metrics()
 
-checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_kappa', verbose=1, save_best_only=True, mode='max')
-Name = "Model-{}".format(int(time.time()))
-tensorboard = TensorBoard(log_dir='logs_new6\{}'.format(Name))
-
-callbacks_list = [checkpoint] + [tensorboard] + [kappa_metrics]
+checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath, monitor='val_loss', save_best_only=True, mode='min')
+earlystop = EarlyStopping(patience=5, monitor='val_loss', min_delta=0.0005)
 
 model.summary()
 #
 history = model.fit(train_generator,
-                                   steps_per_epoch=train_generator.samples // BATCH_SIZE,
-                                   epochs=35,
-                                   validation_data=val_generator,
-                                   validation_steps = val_generator.samples // BATCH_SIZE,
-                                   callbacks=callbacks_list)
+                    batch_size=BATCH_SIZE,
+                    epochs=20,
+                    validation_data=val_generator,
+                    validation_batch_size=BATCH_SIZE,
+                    callbacks=[earlystop, checkpoint])
 
 model.load_weights(SAVED_MODEL_NAME)
+
+for layer in model.layers[-20:]:
+    if not isinstance(layer, BatchNormalization):
+        layer.trainable = True
+
+model.compile(
+    loss='binary_crossentropy',
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    metrics=['binary_accuracy'])
+
+history = model.fit(train_generator,
+                    batch_size=BATCH_SIZE,
+                    epochs=25,
+                    validation_data=val_generator,
+                    validation_batch_size=BATCH_SIZE,
+                    callbacks=[earlystop, checkpoint])
+
+model.load_weights(SAVED_MODEL_NAME)
+
 # Calculate QWK on train set
 y_train_preds, train_labels = get_preds_and_labels(model, train_generator)
 y_train_preds = np.rint(y_train_preds).astype(np.uint8).clip(0, 4)
