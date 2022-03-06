@@ -1,30 +1,12 @@
 import os
-import sys
-
-# from efficientnet.keras import EfficientNetB5
 
 import cv2
-import time
-import scipy as sp
 import numpy as np
 import random as rn
 import pandas as pd
 from IPython.display import display
-from tqdm import tqdm
-from PIL import Image
-from functools import partial
-import matplotlib.pyplot as plt
 import tensorflow as tf
-import keras
-from keras import initializers
-from keras import regularizers
-from keras import constraints
-from keras import backend as K
-from keras.activations import elu
-from keras.optimizer_v1 import Adam
-from keras.models import Sequential
-from keras.layers import Layer, InputSpec
-from keras.utils.generic_utils import get_custom_objects
+
 from keras.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, TensorBoard
 from keras.layers import Dense, Conv2D, Flatten, GlobalAveragePooling2D, Dropout, BatchNormalization
 from keras.preprocessing.image import ImageDataGenerator
@@ -33,12 +15,6 @@ from sklearn.metrics import cohen_kappa_score
 IMG_WIDTH = 224
 IMG_HEIGHT = 224
 CHANNELS = 3
-
-# TRAIN_DF_PATH = "train.csv"
-# TEST_DF_PATH = 'test.csv'
-# TRAIN_IMG_PATH = "train_images/"
-# TEST_IMG_PATH = 'test_images/'
-# SAVED_MODEL_NAME = 'effnet_modelB5.h5'
 
 TRAIN_DF_PATH = "./Data/train.csv"
 TEST_DF_PATH = './Data/test.csv'
