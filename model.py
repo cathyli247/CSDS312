@@ -6,14 +6,15 @@ import random as rn
 import pandas as pd
 from IPython.display import display
 import tensorflow as tf
+from keras import backend as K
 
 from keras.callbacks import Callback, EarlyStopping, ReduceLROnPlateau, TensorBoard
 from keras.layers import Dense, Conv2D, Flatten, GlobalAveragePooling2D, Dropout, BatchNormalization
 from keras.preprocessing.image import ImageDataGenerator
 from sklearn.metrics import cohen_kappa_score
 
-IMG_WIDTH = 224
-IMG_HEIGHT = 224
+IMG_WIDTH = 456
+IMG_HEIGHT = 456
 CHANNELS = 3
 
 TRAIN_DF_PATH = "./Data/train.csv"
@@ -140,19 +141,128 @@ val_generator = train_datagen.flow_from_dataframe(train_df,
                                                   class_mode='raw',
                                                   subset='validation')
 
-effnet = tf.keras.applications.efficientnet.EfficientNetB0(weights="imagenet",
-                                                           include_top=False,
-                                                           input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
+class RAdam(tf.keras.optimizers.Optimizer):
+    def __init__(self, lr=0.001, beta_1=0.9, beta_2=0.999,
+                 epsilon=None, decay=0., weight_decay=0., amsgrad=False,
+                 total_steps=0, warmup_proportion=0.1, min_lr=0., **kwargs):
+        super(RAdam, self).__init__(**kwargs)
+        with K.name_scope(self.__class__.__name__):
+            self.iterations = K.variable(0, dtype='int64', name='iterations')
+            self.lr = K.variable(lr, name='lr')
+            self.beta_1 = K.variable(beta_1, name='beta_1')
+            self.beta_2 = K.variable(beta_2, name='beta_2')
+            self.decay = K.variable(decay, name='decay')
+            self.weight_decay = K.variable(weight_decay, name='weight_decay')
+            self.total_steps = K.variable(total_steps, name='total_steps')
+            self.warmup_proportion = K.variable(warmup_proportion, name='warmup_proportion')
+            self.min_lr = K.variable(lr, name='min_lr')
+        if epsilon is None:
+            epsilon = K.epsilon()
+        self.epsilon = epsilon
+        self.initial_decay = decay
+        self.initial_weight_decay = weight_decay
+        self.initial_total_steps = total_steps
+        self.amsgrad = amsgrad
 
-# effnet = EfficientNetB5(weights=None,
-#                             include_top=False,
-#                             input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
+    def get_updates(self, loss, params):
+        grads = self.get_gradients(loss, params)
+        self.updates = [K.update_add(self.iterations, 1)]
+
+        lr = self.lr
+
+        if self.initial_decay > 0:
+            lr = lr * (1. / (1. + self.decay * K.cast(self.iterations, K.dtype(self.decay))))
+
+        t = K.cast(self.iterations, K.floatx()) + 1
+
+        if self.initial_total_steps > 0:
+            warmup_steps = self.total_steps * self.warmup_proportion
+            decay_steps = self.total_steps - warmup_steps
+            lr = K.switch(
+                t <= warmup_steps,
+                lr * (t / warmup_steps),
+                lr * (1.0 - K.minimum(t, decay_steps) / decay_steps),
+                )
+
+        ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p), name='m_' + str(i)) for (i, p) in enumerate(params)]
+        vs = [K.zeros(K.int_shape(p), dtype=K.dtype(p), name='v_' + str(i)) for (i, p) in enumerate(params)]
+
+        if self.amsgrad:
+            vhats = [K.zeros(K.int_shape(p), dtype=K.dtype(p), name='vhat_' + str(i)) for (i, p) in enumerate(params)]
+        else:
+            vhats = [K.zeros(1, name='vhat_' + str(i)) for i in range(len(params))]
+
+        self.weights = [self.iterations] + ms + vs + vhats
+
+        beta_1_t = K.pow(self.beta_1, t)
+        beta_2_t = K.pow(self.beta_2, t)
+
+        sma_inf = 2.0 / (1.0 - self.beta_2) - 1.0
+        sma_t = sma_inf - 2.0 * t * beta_2_t / (1.0 - beta_2_t)
+
+        for p, g, m, v, vhat in zip(params, grads, ms, vs, vhats):
+            m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
+            v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
+
+            m_corr_t = m_t / (1.0 - beta_1_t)
+            if self.amsgrad:
+                vhat_t = K.maximum(vhat, v_t)
+                v_corr_t = K.sqrt(vhat_t / (1.0 - beta_2_t) + self.epsilon)
+                self.updates.append(K.update(vhat, vhat_t))
+            else:
+                v_corr_t = K.sqrt(v_t / (1.0 - beta_2_t) + self.epsilon)
+
+            r_t = K.sqrt((sma_t - 4.0) / (sma_inf - 4.0) *
+                         (sma_t - 2.0) / (sma_inf - 2.0) *
+                         sma_inf / sma_t)
+
+            p_t = K.switch(sma_t > 5, r_t * m_corr_t / v_corr_t, m_corr_t)
+
+            if self.initial_weight_decay > 0:
+                p_t += self.weight_decay * p
+
+            p_t = p - lr * p_t
+
+            self.updates.append(K.update(m, m_t))
+            self.updates.append(K.update(v, v_t))
+            new_p = p_t
+
+            # Apply constraints.
+            if getattr(p, 'constraint', None) is not None:
+                new_p = p.constraint(new_p)
+
+            self.updates.append(K.update(p, new_p))
+        return self.updates
+
+    def get_config(self):
+        config = {
+            'lr': float(K.get_value(self.lr)),
+            'beta_1': float(K.get_value(self.beta_1)),
+            'beta_2': float(K.get_value(self.beta_2)),
+            'decay': float(K.get_value(self.decay)),
+            'weight_decay': float(K.get_value(self.weight_decay)),
+            'epsilon': self.epsilon,
+            'amsgrad': self.amsgrad,
+            'total_steps': float(K.get_value(self.total_steps)),
+            'warmup_proportion': float(K.get_value(self.warmup_proportion)),
+            'min_lr': float(K.get_value(self.min_lr)),
+        }
+        base_config = super(RAdam, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+# effnet = tf.keras.applications.efficientnet.EfficientNetB0(weights="imagenet",
+#                                                            include_top=False,
+#                                                            input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
+
+effnet = tf.keras.applications.efficientnet.EfficientNetB5(weights=None,
+                            include_top=False,
+                            input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
 
 # effnet = tf.keras.applications.EfficientNetV2L(weights="imagenet",
 #                         include_top=False,
 #                         input_shape=(IMG_WIDTH, IMG_HEIGHT, CHANNELS))
 
-# effnet.load_weights('efficientnet-b5_imagenet_1000_notop.h5')
+effnet.load_weights('efficientnet-b5_imagenet_1000_notop.h5')
 
 effnet.trainable = False
 
@@ -166,7 +276,7 @@ model = tf.keras.Sequential([
 
 model.compile(
     loss='binary_crossentropy',
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
+    optimizer=RAdam(lr=0.01),
     metrics=['binary_accuracy'])
 
 checkpoint = tf.keras.callbacks.ModelCheckpoint(SAVED_MODEL_NAME, monitor='val_loss', save_best_only=True, mode='min')
@@ -183,37 +293,19 @@ history = model.fit(train_generator,
 
 model.load_weights(SAVED_MODEL_NAME)
 
-for layer in model.layers[-20:]:
-    if not isinstance(layer, BatchNormalization):
-        layer.trainable = True
-
-model.compile(
-    loss='binary_crossentropy',
-    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-    metrics=['binary_accuracy'])
-
-history = model.fit(train_generator,
-                    batch_size=BATCH_SIZE,
-                    epochs=35,
-                    validation_data=val_generator,
-                    validation_batch_size=BATCH_SIZE,
-                    callbacks=[earlystop, checkpoint])
-
-model.load_weights(SAVED_MODEL_NAME)
-
-# Calculate QWK on train set
-y_train_preds, train_labels = get_preds_and_labels(model, train_generator)
-y_train_preds = np.rint(y_train_preds).astype(np.uint8).clip(0, 4)
-
-# Calculate score
-train_score = cohen_kappa_score(train_labels, y_train_preds, weights="quadratic")
-
-# Calculate QWK on validation set
-y_val_preds, val_labels = get_preds_and_labels(model, val_generator)
-y_val_preds = np.rint(y_val_preds).astype(np.uint8).clip(0, 4)
-
-# Calculate score
-val_score = cohen_kappa_score(val_labels, y_val_preds, weights="quadratic")
-
-print(f"The Training Cohen Kappa Score is: {round(train_score, 5)}")
-print(f"The Validation Cohen Kappa Score is: {round(val_score, 5)}")
+# # Calculate QWK on train set
+# y_train_preds, train_labels = get_preds_and_labels(model, train_generator)
+# y_train_preds = np.rint(y_train_preds).astype(np.uint8).clip(0, 4)
+#
+# # Calculate score
+# train_score = cohen_kappa_score(train_labels, y_train_preds, weights="quadratic")
+#
+# # Calculate QWK on validation set
+# y_val_preds, val_labels = get_preds_and_labels(model, val_generator)
+# y_val_preds = np.rint(y_val_preds).astype(np.uint8).clip(0, 4)
+#
+# # Calculate score
+# val_score = cohen_kappa_score(val_labels, y_val_preds, weights="quadratic")
+#
+# print(f"The Training Cohen Kappa Score is: {round(train_score, 5)}")
+# print(f"The Validation Cohen Kappa Score is: {round(val_score, 5)}")
