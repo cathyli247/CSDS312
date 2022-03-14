@@ -45,16 +45,7 @@ def preprocess_image(image, sigmaX=10):
 
     :return: A NumPy array containing the preprocessed image
     """
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = crop_image_from_gray(image)
-    image = cv2.resize(image, (IMG_SIZE, IMG_SIZE))
-    image = cv2.addWeighted(image, 4, cv2.GaussianBlur(
-        image, (0, 0), sigmaX), -4, 128)
-    return image
-
-
-def img_aug():
-    path = 'images/' + id + '.png'
+    path = 'train_images/' + id + '.png'
     img = cv2.imread(path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = crop_image_from_gray(img)    
@@ -70,3 +61,13 @@ def img_aug():
     img = cv2.addWeighted(img, 4, gauss_blur, -4, 128)
     img = cv2.bitwise_and(img, img, mask=cir)
     return img 
+
+
+
+def img_aug():
+    train_datagen = ImageDataGenerator(rotation_range=60,
+                                       horizontal_flip=True,
+                                       vertical_flip=True,
+                                       validation_split=0.15,
+                                       preprocessing_function=preprocess_image)
+    return train_datagen
