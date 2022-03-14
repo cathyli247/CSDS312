@@ -21,15 +21,19 @@ def crop_image_from_gray(img, tol=7):
         return img[np.ix_(mask.any(1), mask.any(0))]
 
     # If we have a normal RGB images
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    mask = gray_img>tol   
-    img_shape = img[:,:,0][np.ix_(mask.any(1),mask.any(0))].shape
-    if (img_shape[0] != 0):
-        image = []
-        for i in range(img.ndim):
-            image.append(img[:,:,i][np.ix_(mask.any(1),mask.any(0))])
-        img = np.stack(image,axis=-1)
-    return img
+    elif img.ndim == 3:
+        gray_img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        mask = gray_img > tol
+
+        check_shape = img[:, :, 0][np.ix_(mask.any(1), mask.any(0))].shape[0]
+        if (check_shape == 0):  # image is too dark so that we crop out everything,
+            return img  # return original image
+        else:
+            img1 = img[:, :, 0][np.ix_(mask.any(1), mask.any(0))]
+            img2 = img[:, :, 1][np.ix_(mask.any(1), mask.any(0))]
+            img3 = img[:, :, 2][np.ix_(mask.any(1), mask.any(0))]
+            img = np.stack([img1, img2, img3], axis=-1)
+        return img
 
 
 def preprocess_image(image, sigmaX=10):
@@ -45,29 +49,17 @@ def preprocess_image(image, sigmaX=10):
 
     :return: A NumPy array containing the preprocessed image
     """
-    path = 'train_images/' + id + '.png'
-    img = cv2.imread(path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = crop_image_from_gray(img)    
-    cropped_size = (IMG_SIZE, IMG_SIZE)
-    img = cv2.resize(img, cropped_size)
-    center = (int(IMG_SIZE/2), int(IMG_SIZE/2))
-    radius = np.min(center)
-
-    cir = np.zeros(cropped_size, dtype=np.uint8)
-    cir = cv2.circle(img=cir, center=center, radius=radius, color=(255,255,255), thickness=-1)
-
-    gauss_blur = cv2.GaussianBlur(img, (0, 0), radius/10)
-    img = cv2.addWeighted(img, 4, gauss_blur, -4, 128)
-    img = cv2.bitwise_and(img, img, mask=cir)
-    return img 
-
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = crop_image_from_gray(image)
+    image = cv2.resize(image, (IMG_SIZE, IMG_SIZE))
+    image = cv2.addWeighted(image, 4, cv2.GaussianBlur(
+        image, (0, 0), sigmaX), -4, 128)
+    return image
 
 
 def img_aug():
     train_datagen = ImageDataGenerator(rotation_range=60,
                                        horizontal_flip=True,
                                        vertical_flip=True,
-                                       validation_split=0.15,
-                                       preprocessing_function=preprocess_image)
+                                       validation_split=0.15)
     return train_datagen
