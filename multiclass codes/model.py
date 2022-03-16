@@ -1,10 +1,11 @@
 import os
-import requests
-import numpy as np
 import random as rn
+
+import numpy as np
+import requests
 import tensorflow as tf
-from keras import layers, Sequential
-from keras import callbacks
+from tensorflow.keras import Sequential, callbacks, layers, optimizers, mixed_precision
+
 from parameters import *
 
 rn.seed(SEED)
@@ -18,7 +19,7 @@ def build_model():
     with open(PRE_TRAINED_MODEL_PATH, 'wb') as f:
         f.write(r.content)
 
-    effnet = tf.keras.applications.efficientnet_v2.EfficientNetV2M(weights=PRE_TRAINED_MODEL_PATH,
+    effnet = tf.keras.applications.efficientnet_v2.EfficientNetV2L(weights=PRE_TRAINED_MODEL_PATH,
                                                                    include_top=False,
                                                                    input_shape=(IMG_SIZE, IMG_SIZE, CHANNELS))
 
@@ -29,17 +30,17 @@ def build_model():
         layers.GlobalAveragePooling2D(),
         layers.BatchNormalization(),
         layers.Dropout(0.5),
-        layers.Dense(5, activation='softmax')
+        layers.Dense(5, activation='softmax', dtype='float32')
     ])
 
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    lr_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=0.1,
         decay_steps=5,
         decay_rate=0.5)
 
     model.compile(loss='categorical_crossentropy',
-                  optimizer=tf.keras.optimizers.Adam(
-                      learning_rate=lr_schedule),
+                  optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
+                      learning_rate=lr_schedule)),
                   metrics=['categorical_accuracy'])
 
     return model
@@ -50,7 +51,7 @@ earlystop = callbacks.EarlyStopping(patience=5,
                                     min_delta=0.0005)
 tensorboard = callbacks.TensorBoard(log_dir="./logs/freezed",
                                     update_freq=100,
-                                    profile_batch='1, 500')
+                                    profile_batch='1, 49')
 
 
 def fit_data(data, datagen, model, epoch, batch_size, model_path):
@@ -92,12 +93,12 @@ def unfreeze_last_block(model):
         if not isinstance(layer, layers.BatchNormalization):
             layer.trainable = True
 
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    lr_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=0.01,
         decay_steps=5,
         decay_rate=0.5)
 
     model.compile(loss='categorical_crossentropy',
-                  optimizer=tf.keras.optimizers.Adam(
-                      learning_rate=lr_schedule),
+                  optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
+                      learning_rate=lr_schedule)),
                   metrics=['categorical_accuracy'])
