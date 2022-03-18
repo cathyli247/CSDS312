@@ -15,11 +15,13 @@ os.environ['PYTHONHASHSEED'] = str(SEED)
 
 
 def build_model():
-    r = requests.get(PRE_TRAINED_MODEL_URL, allow_redirects=True)
-    with open(PRE_TRAINED_MODEL_PATH, 'wb') as f:
-        f.write(r.content)
+    model_path = os.path.join(MODEL_FOLDER_PATH, PRE_TRAINED_MODEL_NAME)
+    if PRE_TRAINED_MODEL_NAME not in os.listdir(MODEL_FOLDER_PATH):
+        r = requests.get(PRE_TRAINED_MODEL_URL, allow_redirects=True)
+        with open(model_path, 'wb') as f:
+            f.write(r.content)
 
-    effnet = tf.keras.applications.efficientnet_v2.EfficientNetV2L(weights=PRE_TRAINED_MODEL_PATH,
+    effnet = tf.keras.applications.efficientnet_v2.EfficientNetV2L(weights=model_path,
                                                                    include_top=False,
                                                                    input_shape=(IMG_SIZE, IMG_SIZE, CHANNELS))
 
@@ -102,3 +104,4 @@ def unfreeze_last_block(model):
                   optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
                       learning_rate=lr_schedule)),
                   metrics=['categorical_accuracy'])
+    return model

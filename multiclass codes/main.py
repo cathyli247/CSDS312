@@ -9,7 +9,11 @@ from model import build_model, fit_data, unfreeze_last_block
 from parameters import *
 from preprocessing import img_aug
 
+
 print(tf.config.list_physical_devices('GPU'))
+
+tf.config.optimizer.set_jit('autoclustering')
+print(tf.config.optimizer.get_jit())
 
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
@@ -36,18 +40,33 @@ def get_dr_datasets():
 train_df = get_dr_datasets()
 train_datagen = img_aug()
 
-model = build_model()
+mirrored_strategy = tf.distribute.MirroredStrategy()
+
+with mirrored_strategy.scope():
+    model = build_model()
+
 model.summary()
 
-history = fit_data(train_df, train_datagen, model,
-                   FREEZED_EPOCH, FREEZED_BATCH_SIZE, FREEZED_SAVED_MODEL_PATH)
-model.load_weights(FREEZED_SAVED_MODEL_PATH)
+freezed_model_path = os.path.join(MODEL_FOLDER_PATH, FREEZED_SAVED_MODEL_NAME)
+unfreezed_model_path = os.path.join(
+    MODEL_FOLDER_PATH, UNFREEZED_SAVED_MODEL_NAME)
 
-unfreeze_last_block(model)
+parallel_freezed_batch_size = FREEZED_BATCH_SIZE * \
+    mirrored_strategy.num_replicas_in_sync
 
 history = fit_data(train_df, train_datagen, model,
-                   UNFREEZED_EPOCH, UNFREEZED_BATCH_SIZE, UNFREEZED_SAVED_MODEL_PATH)
-model.load_weights(UNFREEZED_SAVED_MODEL_PATH)
+                   FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
+model.load_weights(freezed_model_path)
+
+with mirrored_strategy.scope():
+    model = unfreeze_last_block(model)
+
+parallel_unfreezed_batch_size = UNFREEZED_BATCH_SIZE * \
+    mirrored_strategy.num_replicas_in_sync
+
+history = fit_data(train_df, train_datagen, model,
+                   UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
+model.load_weights(unfreezed_model_path)
 
 # print(f"The Training Categorical Accuracy Score is: \
 #     {round(model.evaluate(train_generator, batch_size=UNFREEZED_BATCH_SIZE)[1], 5)}")
