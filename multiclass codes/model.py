@@ -32,7 +32,7 @@ def build_model():
                                                                    input_shape=(IMG_SIZE, IMG_SIZE, CHANNELS))
     effnet.trainable = False
 
-    def build_top(effnet_output, suffix, output_num):
+    def build_top(effnet_output, suffix, output_num, activation):
         conv = layers.Conv2D.from_config(effnet.layers[-3].get_config())
         conv._name = f'top_conv_{suffix}'
         top_component = conv(effnet_output)
@@ -49,13 +49,13 @@ def build_model():
         top_component = layers.Dropout(0.5)(top_component)
 
         top_component = layers.Dense(
-            output_num, activation='softmax')(top_component)
+            output_num, activation=activation, name=f'output_{suffix}')(top_component)
         return top_component
 
     effnet_no_top_block = effnet.layers[-4].output
 
-    top_output_1 = build_top(effnet_no_top_block, 1, 5)
-    top_output_2 = build_top(effnet_no_top_block, 2, 2)
+    top_output_1 = build_top(effnet_no_top_block, 1, 5, 'softmax')
+    top_output_2 = build_top(effnet_no_top_block, 2, 2, 'sigmoid')
 
     model = tf.keras.Model(inputs=effnet.input, outputs=[
                            top_output_1, top_output_2])
@@ -72,10 +72,15 @@ def build_model():
         decay_rate=0.5)
 
     # TODO: need to modify
-    model.compile(loss='categorical_crossentropy',
+    losses = {
+        'output_1': 'categorical_crossentropy',
+        'output_2': 'binary_crossentropy',
+    }
+
+    model.compile(loss=losses,
                   optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
                       learning_rate=lr_schedule)),
-                  metrics=['categorical_accuracy'])
+                  metrics=['accuracy'])
 
     return model
 
@@ -136,8 +141,13 @@ def unfreeze_last_block(model):
         decay_rate=0.5)
 
     # TODO: need to modify
-    model.compile(loss='categorical_crossentropy',
+    losses = {
+        'output_1': 'categorical_crossentropy',
+        'output_2': 'binary_crossentropy',
+    }
+
+    model.compile(loss=losses,
                   optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
                       learning_rate=lr_schedule)),
-                  metrics=['categorical_accuracy'])
+                  metrics=['accuracy'])
     return model
