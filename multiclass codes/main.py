@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from model import build_model, fit_data, unfreeze_last_block
 from parameters import *
-from preprocessing import img_aug
+from sklearn.utils import shuffle
 
 
 print(tf.config.list_physical_devices('GPU'))
@@ -17,8 +17,8 @@ print(tf.config.optimizer.get_jit())
 
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
-tf.config.experimental.set_memory_growth(
-    tf.config.list_physical_devices('GPU')[0], True)
+for i in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(i, True)
 
 rn.seed(SEED)
 np.random.seed(SEED)
@@ -26,19 +26,31 @@ tf.random.set_seed(SEED)
 os.environ['PYTHONHASHSEED'] = str(SEED)
 
 
-def get_dr_datasets():
-    train_df = pd.read_csv(DR_TRAIN_DF_PATH)
-    # Add extension to id_code
-    train_df['id_code'] = train_df['id_code'] + ".png"
-    train_df['diagnosis'] = train_df['diagnosis'].to_numpy().reshape(
-        len(train_df), 1).tolist()
-    print(f"# Training images: {train_df.shape[0]}")
+def input_pipeline():
+    dr_2019_X = np.load(DR_2019_X_PATH)
+    dr_2019_y = np.load(DR_2019_Y_PATH)
+    dr_2019_y1 = pd.get_dummies(dr_2019_y).to_numpy()
+    dr_2019_y2 = np.array([[1, 0] for _ in range(len(dr_2019_y1))])
 
-    return train_df
+    print(dr_2019_X.shape, dr_2019_y.shape)
+
+    glaucoma_X = np.load(GLAUCOMA_X_PATH)
+    glaucoma_y = np.load(GLAUCOMA_Y_PATH)
+    glaucoma_y2 = pd.get_dummies(glaucoma_y).to_numpy().tolist()
+    glaucoma_y1 = np.array([[1, 0, 0, 0, 0] for _ in range(len(glaucoma_y2))])
+
+    print(glaucoma_X.shape, glaucoma_y.shape)
+
+    X = np.concatenate((dr_2019_X, glaucoma_X), axis=0)
+    y1 = np.concatenate((dr_2019_y1, glaucoma_y1), axis=0)
+    y2 = np.concatenate((dr_2019_y2, glaucoma_y2), axis=0)
+
+    print(X.shape, y1.shape, y2.shape)
+
+    return shuffle(X, y1, y2, random_state=SEED)
 
 
-train_df = get_dr_datasets()
-train_datagen = img_aug()
+X, y1, y2 = input_pipeline()
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
@@ -54,7 +66,7 @@ unfreezed_model_path = os.path.join(
 parallel_freezed_batch_size = FREEZED_BATCH_SIZE * \
     mirrored_strategy.num_replicas_in_sync
 
-history = fit_data(train_df, train_datagen, model,
+history = fit_data(X, y1, y2, model,
                    FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
 model.load_weights(freezed_model_path)
 
@@ -64,7 +76,7 @@ with mirrored_strategy.scope():
 parallel_unfreezed_batch_size = UNFREEZED_BATCH_SIZE * \
     mirrored_strategy.num_replicas_in_sync
 
-history = fit_data(train_df, train_datagen, model,
+history = fit_data(X, y1, y2, model,
                    UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
 model.load_weights(unfreezed_model_path)
 

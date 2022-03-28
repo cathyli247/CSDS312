@@ -55,7 +55,7 @@ def build_model():
     effnet_no_top_block = effnet.layers[-4].output
 
     top_output_1 = build_top(effnet_no_top_block, 1, 5, 'softmax')
-    top_output_2 = build_top(effnet_no_top_block, 2, 2, 'sigmoid')
+    top_output_2 = build_top(effnet_no_top_block, 2, 2, 'softmax')
 
     model = tf.keras.Model(inputs=effnet.input, outputs=[
                            top_output_1, top_output_2])
@@ -71,7 +71,6 @@ def build_model():
         decay_steps=5,
         decay_rate=0.5)
 
-    # TODO: need to modify
     losses = {
         'output_1': 'categorical_crossentropy',
         'output_2': 'binary_crossentropy',
@@ -85,7 +84,6 @@ def build_model():
     return model
 
 
-# TODO: need to modify
 earlystop = callbacks.EarlyStopping(patience=5,
                                     monitor='val_loss',
                                     min_delta=0.0005)
@@ -94,44 +92,23 @@ tensorboard = callbacks.TensorBoard(log_dir="./logs/freezed",
                                     profile_batch='1, 49')
 
 
-# TODO: need to modify
-def fit_data(data, datagen, model, epoch, batch_size, model_path):
-    train_generator = datagen.flow_from_dataframe(data,
-                                                  x_col='id_code',
-                                                  y_col='diagnosis',
-                                                  directory=DR_TRAIN_IMG_PATH,
-                                                  target_size=(
-                                                        IMG_SIZE, IMG_SIZE),
-                                                  batch_size=batch_size,
-                                                  class_mode='categorical',
-                                                  subset='training')
-
-    val_generator = datagen.flow_from_dataframe(data,
-                                                x_col='id_code',
-                                                y_col='diagnosis',
-                                                directory=DR_TRAIN_IMG_PATH,
-                                                target_size=(
-                                                    IMG_SIZE, IMG_SIZE),
-                                                batch_size=batch_size,
-                                                class_mode='categorical',
-                                                subset='validation')
+def fit_data(X, y1, y2, model, epoch, batch_size, model_path):
 
     checkpoint = callbacks.ModelCheckpoint(filepath=model_path,
                                            monitor='val_loss',
                                            save_best_only=True,
                                            mode='min')
 
-    return model.fit(train_generator,
+    return model.fit(X, {"output_1": y1, "output_2": y2},
                      batch_size=batch_size,
                      epochs=epoch,
-                     validation_data=val_generator,
+                     validation_split=0.15,
                      validation_batch_size=batch_size,
                      callbacks=[earlystop, checkpoint, tensorboard])
 
 
 def unfreeze_last_block(model):
-    # TODO: need to modify
-    for layer in model.layers[-22:]:
+    for layer in model.layers[-29:]:
         if not isinstance(layer, layers.BatchNormalization):
             layer.trainable = True
 
@@ -140,7 +117,6 @@ def unfreeze_last_block(model):
         decay_steps=5,
         decay_rate=0.5)
 
-    # TODO: need to modify
     losses = {
         'output_1': 'categorical_crossentropy',
         'output_2': 'binary_crossentropy',
