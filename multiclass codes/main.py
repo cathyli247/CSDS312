@@ -9,14 +9,11 @@ from model import build_model, fit_data, unfreeze_last_block
 from parameters import *
 from sklearn.utils import shuffle
 
-
+os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
 print(tf.config.list_physical_devices('GPU'))
-
 tf.config.optimizer.set_jit('autoclustering')
 print(tf.config.optimizer.get_jit())
-
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
-
 for i in tf.config.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(i, True)
 
@@ -24,6 +21,15 @@ rn.seed(SEED)
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 os.environ['PYTHONHASHSEED'] = str(SEED)
+
+freezed_model_path = os.path.join(MODEL_FOLDER_PATH, FREEZED_SAVED_MODEL_NAME)
+unfreezed_model_path = os.path.join(
+    MODEL_FOLDER_PATH, UNFREEZED_SAVED_MODEL_NAME)
+mirrored_strategy = tf.distribute.MirroredStrategy()
+parallel_freezed_batch_size = FREEZED_BATCH_SIZE * \
+                              mirrored_strategy.num_replicas_in_sync
+parallel_unfreezed_batch_size = UNFREEZED_BATCH_SIZE * \
+                                mirrored_strategy.num_replicas_in_sync
 
 
 def input_pipeline():
