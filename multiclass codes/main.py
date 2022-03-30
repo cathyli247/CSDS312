@@ -41,19 +41,16 @@ def input_pipeline():
 
     print(glaucoma_X.shape, glaucoma_y.shape)
 
-    # cleaned_X = np.load(CLEANED_X_PATH)
-    # cleaned_Y = np.load(CLEANED_Y_PATH)
-    # cleaned_y1 = pd.get_dummies(cleaned_Y).to_numpy()
-    # cleaned_y2 = np.array([[1, 0] for _ in range(len(cleaned_y1))])
-    #
-    # print(cleaned_X.shape, cleaned_Y.shape)
-    #
-    # X = np.concatenate((dr_2019_X, glaucoma_X, cleaned_X), axis=0)
-    # y1 = np.concatenate((dr_2019_y1, glaucoma_y1, cleaned_y1), axis=0)
-    # y2 = np.concatenate((dr_2019_y2, glaucoma_y2, cleaned_y2), axis=0)
-    X = np.concatenate((dr_2019_X, glaucoma_X), axis=0)
-    y1 = np.concatenate((dr_2019_y1, glaucoma_y1), axis=0)
-    y2 = np.concatenate((dr_2019_y2, glaucoma_y2), axis=0)
+    cleaned_X = np.load(CLEANED_X_PATH)
+    cleaned_Y = np.load(CLEANED_Y_PATH)
+    cleaned_y1 = pd.get_dummies(cleaned_Y).to_numpy()
+    cleaned_y2 = np.array([[1, 0] for _ in range(len(cleaned_y1))])
+
+    print(cleaned_X.shape, cleaned_Y.shape)
+
+    X = np.concatenate((dr_2019_X, glaucoma_X, cleaned_X), axis=0)
+    y1 = np.concatenate((dr_2019_y1, glaucoma_y1, cleaned_y1), axis=0)
+    y2 = np.concatenate((dr_2019_y2, glaucoma_y2, cleaned_y2), axis=0)
 
     print(X.shape, y1.shape, y2.shape)
 
@@ -63,44 +60,22 @@ def input_pipeline():
         (X[:int(TRAINING_RATIO * len(X))], {"output_1": y1[:int(TRAINING_RATIO * len(X))], "output_2": y2[:int(TRAINING_RATIO * len(X))]}))
     validation_dataset = tf.data.Dataset.from_tensor_slices(
         (X[int(TRAINING_RATIO * len(X)):], {"output_1": y1[int(TRAINING_RATIO * len(X)):], "output_2": y2[int(TRAINING_RATIO * len(X)):]}))
-
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
     train_dataset = train_dataset.with_options(options)
     validation_dataset = validation_dataset.with_options(options)
 
-    print(train_dataset.element_spec, validation_dataset.element_spec)
-
-    return train_dataset.prefetch(BUFFER_SIZE).cache(), validation_dataset.prefetch(BUFFER_SIZE).cache()
-
+    return train_dataset, validation_dataset
 
 train_dataset, validation_dataset = input_pipeline()
 
-mirrored_strategy = tf.distribute.MirroredStrategy()
-
 with mirrored_strategy.scope():
     model = build_model()
-
-freezed_model_path = os.path.join(MODEL_FOLDER_PATH, FREEZED_SAVED_MODEL_NAME)
-unfreezed_model_path = os.path.join(
-    MODEL_FOLDER_PATH, UNFREEZED_SAVED_MODEL_NAME)
-
-parallel_freezed_batch_size = FREEZED_BATCH_SIZE * \
-    mirrored_strategy.num_replicas_in_sync
-
-history = fit_data(train_dataset, validation_dataset, model,
-                   FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
-model.load_weights(freezed_model_path)
+history = fit_data(train_dataset.batch(FREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True).prefetch(FREEZED_BATCH_SIZE * 2).cache(), validation_dataset.batch(FREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE,deterministic=True).prefetch(FREEZED_BATCH_SIZE * 2).cache(), model, FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
 
 with mirrored_strategy.scope():
     model = unfreeze_last_block(model)
-
-parallel_unfreezed_batch_size = UNFREEZED_BATCH_SIZE * \
-    mirrored_strategy.num_replicas_in_sync
-
-history = fit_data(train_dataset, validation_dataset, model,
-                   UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
-model.load_weights(unfreezed_model_path)
+history = fit_data(train_dataset.batch(UNFREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache(), validation_dataset.batch(UNFREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache(), model, UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
 
 # print(f"The Training Categorical Accuracy Score is: \
 #     {round(model.evaluate(train_generator, batch_size=UNFREEZED_BATCH_SIZE)[1], 5)}")
