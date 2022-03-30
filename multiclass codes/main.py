@@ -41,9 +41,16 @@ def input_pipeline():
 
     print(glaucoma_X.shape, glaucoma_y.shape)
 
-    X = np.concatenate((dr_2019_X, glaucoma_X), axis=0)
-    y1 = np.concatenate((dr_2019_y1, glaucoma_y1), axis=0)
-    y2 = np.concatenate((dr_2019_y2, glaucoma_y2), axis=0)
+    cleaned_X = np.load(CLEANED_X_PATH)
+    cleaned_Y = np.load(CLEANED_Y_PATH)
+    cleaned_y1 = pd.get_dummies(cleaned_Y).to_numpy()
+    cleaned_y2 = np.array([[1, 0] for _ in range(len(cleaned_y1))])
+
+    print(cleaned_X.shape, cleaned_Y.shape)
+
+    X = np.concatenate((dr_2019_X, glaucoma_X, cleaned_X), axis=0)
+    y1 = np.concatenate((dr_2019_y1, glaucoma_y1, cleaned_y1), axis=0)
+    y2 = np.concatenate((dr_2019_y2, glaucoma_y2, cleaned_y2), axis=0)
 
     print(X.shape, y1.shape, y2.shape)
 

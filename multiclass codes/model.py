@@ -84,7 +84,7 @@ def build_model():
     return model
 
 
-earlystop = callbacks.EarlyStopping(patience=5,
+earlystop = callbacks.EarlyStopping(patience=15,
                                     monitor='val_loss',
                                     min_delta=0.0005)
 tensorboard = callbacks.TensorBoard(log_dir="./logs/freezed",
