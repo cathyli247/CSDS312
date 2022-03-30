@@ -92,17 +92,17 @@ tensorboard = callbacks.TensorBoard(log_dir="./logs/freezed",
                                     profile_batch='1, 49')
 
 
-def fit_data(X, y1, y2, model, epoch, batch_size, model_path):
+def fit_data(train_dataset, validation_dataset, model, epoch, batch_size, model_path):
 
     checkpoint = callbacks.ModelCheckpoint(filepath=model_path,
                                            monitor='val_loss',
                                            save_best_only=True,
                                            mode='min')
 
-    return model.fit(X, {"output_1": y1, "output_2": y2},
+    return model.fit(train_dataset,
                      batch_size=batch_size,
                      epochs=epoch,
-                     validation_split=0.15,
+                     validation_data=validation_dataset,
                      validation_batch_size=batch_size,
                      callbacks=[earlystop, checkpoint, tensorboard])
 

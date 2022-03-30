@@ -14,8 +14,11 @@ UNFREEZED_SAVED_MODEL_NAME = 'unfreezed_model.h5'
 
 FREEZED_BATCH_SIZE = 64
 UNFREEZED_BATCH_SIZE = 8
+BUFFER_SIZE = 128
 FREEZED_EPOCH = 1
 UNFREEZED_EPOCH = 1
+
+TRAINING_RATIO = 0.85
 
 DR_2019_X_PATH = "/home/yxz1648/project/Data/preprocessed/2019/2019train_X.npy"
 DR_2019_Y_PATH = "/home/yxz1648/project/Data/preprocessed/2019/2019train_y.npy"

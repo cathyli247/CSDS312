@@ -47,17 +47,29 @@ def input_pipeline():
 
     print(X.shape, y1.shape, y2.shape)
 
-    return shuffle(X, y1, y2, random_state=SEED)
+    X, y1, y2 = shuffle(X, y1, y2, random_state=SEED)
+
+    train_dataset = tf.data.Dataset.from_tensor_slices(
+        (X[:int(TRAINING_RATIO * len(X))], {"output_1": y1[:int(TRAINING_RATIO * len(X))], "output_2": y2[:int(TRAINING_RATIO * len(X))]}))
+    validation_dataset = tf.data.Dataset.from_tensor_slices(
+        (X[int(TRAINING_RATIO * len(X)):], {"output_1": y1[int(TRAINING_RATIO * len(X)):], "output_2": y2[int(TRAINING_RATIO * len(X)):]}))
+
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    train_dataset = train_dataset.with_options(options)
+    validation_dataset = validation_dataset.with_options(options)
+
+    print(train_dataset.element_spec, validation_dataset.element_spec)
+
+    return train_dataset.prefetch(BUFFER_SIZE).cache(), validation_dataset.prefetch(BUFFER_SIZE).cache()
 
 
-X, y1, y2 = input_pipeline()
+train_dataset, validation_dataset = input_pipeline()
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
 with mirrored_strategy.scope():
     model = build_model()
-
-model.summary()
 
 freezed_model_path = os.path.join(MODEL_FOLDER_PATH, FREEZED_SAVED_MODEL_NAME)
 unfreezed_model_path = os.path.join(
@@ -66,7 +78,7 @@ unfreezed_model_path = os.path.join(
 parallel_freezed_batch_size = FREEZED_BATCH_SIZE * \
     mirrored_strategy.num_replicas_in_sync
 
-history = fit_data(X, y1, y2, model,
+history = fit_data(train_dataset, validation_dataset, model,
                    FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
 model.load_weights(freezed_model_path)
 
@@ -76,7 +88,7 @@ with mirrored_strategy.scope():
 parallel_unfreezed_batch_size = UNFREEZED_BATCH_SIZE * \
     mirrored_strategy.num_replicas_in_sync
 
-history = fit_data(X, y1, y2, model,
+history = fit_data(train_dataset, validation_dataset, model,
                    UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
 model.load_weights(unfreezed_model_path)
 
