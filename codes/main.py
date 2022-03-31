@@ -103,7 +103,7 @@ dataset = tf.data.Dataset.from_tensor_slices(
                                                  deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache()
 options = tf.data.Options()
 options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-train_dataset = dataset.with_options(options)
+dataset = dataset.with_options(options)
 
 print(
     f'Accuracy: {model.evaluate(dataset, batch_size=UNFREEZED_BATCH_SIZE)[-2:]}')
