@@ -24,3 +24,6 @@ DR_2019_Y_PATH = "/home/yxz1648/project/Data/preprocessed/2019/2019train_y.npy"
 
 GLAUCOMA_X_PATH = "/home/yxz1648/project/Data/preprocessed/glaucoma/glaucoma_X.npy"
 GLAUCOMA_Y_PATH = "/home/yxz1648/project/Data/preprocessed/glaucoma/glaucoma_y.npy"
+
+CLEANED_X_PATH = "/home/yxz1648/project/Data/preprocessed/cleaned/clean_trainX.npy"
+CLEANED_Y_PATH = "/home/yxz1648/project/Data/preprocessed/cleaned/clean_trainy.npy"

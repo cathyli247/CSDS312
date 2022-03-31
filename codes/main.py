@@ -53,10 +53,15 @@ def input_pipeline():
 
     print(glaucoma_X.shape, glaucoma_y.shape)
 
-    X = np.concatenate((dr_2019_X, glaucoma_X), axis=0)
-    y1 = np.concatenate((dr_2019_y1, glaucoma_y1), axis=0)
-    y2 = np.concatenate((dr_2019_y2, glaucoma_y2), axis=0)
+    cleaned_X = np.load(CLEANED_X_PATH)
+    cleaned_Y = np.load(CLEANED_Y_PATH)
+    cleaned_y1 = pd.get_dummies(cleaned_Y).to_numpy()
+    cleaned_y2 = np.array([[1, 0] for _ in range(len(cleaned_y1))])
+    print(cleaned_X.shape, cleaned_Y.shape)
 
+    X = np.concatenate((dr_2019_X, glaucoma_X, cleaned_X), axis=0)
+    y1 = np.concatenate((dr_2019_y1, glaucoma_y1, cleaned_y1), axis=0)
+    y2 = np.concatenate((dr_2019_y2, glaucoma_y2, cleaned_y2), axis=0)
     print(X.shape, y1.shape, y2.shape)
 
     X, y1, y2 = shuffle(X, y1, y2, random_state=SEED)
@@ -71,10 +76,10 @@ def input_pipeline():
     train_dataset = train_dataset.with_options(options)
     validation_dataset = validation_dataset.with_options(options)
 
-    return train_dataset, validation_dataset
+    return X, y1, y2, train_dataset, validation_dataset
 
 
-train_dataset, validation_dataset = input_pipeline()
+X, y1, y2, train_dataset, validation_dataset = input_pipeline()
 
 with mirrored_strategy.scope():
     model = build_model()
@@ -82,7 +87,7 @@ with mirrored_strategy.scope():
 history = fit_data(train_dataset.batch(FREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True).prefetch(FREEZED_BATCH_SIZE * 2).cache(),
                    validation_dataset.batch(FREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE,
                                             deterministic=True).prefetch(FREEZED_BATCH_SIZE * 2).cache(), model,
-                   FREEZED_EPOCH, parallel_freezed_batch_size, freezed_model_path)
+                   FREEZED_EPOCH, parallel_freezed_batch_size)
 
 
 with mirrored_strategy.scope():
@@ -91,7 +96,14 @@ with mirrored_strategy.scope():
 history = fit_data(train_dataset.batch(UNFREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache(),
                    validation_dataset.batch(UNFREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE,
                                             deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache(), model,
-                   UNFREEZED_EPOCH, parallel_unfreezed_batch_size, unfreezed_model_path)
+                   UNFREEZED_EPOCH, parallel_unfreezed_batch_size)
 
-# print(f"The Training Categorical Accuracy Score is: \
-#     {round(model.evaluate(train_generator, batch_size=UNFREEZED_BATCH_SIZE)[1], 5)}")
+dataset = tf.data.Dataset.from_tensor_slices(
+    (X, {"output_1": y1, "output_2": y2})).batch(UNFREEZED_BATCH_SIZE, num_parallel_calls=tf.data.AUTOTUNE,
+                                                 deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache()
+options = tf.data.Options()
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+train_dataset = dataset.with_options(options)
+
+print(
+    f'Accuracy: {model.evaluate(dataset, batch_size=UNFREEZED_BATCH_SIZE)[-2:]}')

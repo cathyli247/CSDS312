@@ -66,11 +66,6 @@ def build_model():
 
     model.build((None, IMG_SIZE, IMG_SIZE, CHANNELS))
 
-    lr_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=0.1,
-        decay_steps=5,
-        decay_rate=0.5)
-
     losses = {
         'output_1': 'categorical_crossentropy',
         'output_2': 'binary_crossentropy',
@@ -78,7 +73,7 @@ def build_model():
 
     model.compile(loss=losses,
                   optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
-                      learning_rate=lr_schedule)),
+                      learning_rate=0.01)),
                   metrics=['accuracy'])
 
     return model
@@ -91,7 +86,7 @@ earlystop = callbacks.EarlyStopping(patience=10,
 # tensorboard = callbacks.TensorBoard(log_dir="./logs/freezed")
 
 
-def fit_data(train_dataset, validation_dataset, model, epoch, batch_size, model_path):
+def fit_data(train_dataset, validation_dataset, model, epoch, batch_size):
 
     return model.fit(train_dataset,
                      batch_size=batch_size,
@@ -106,11 +101,6 @@ def unfreeze_last_block(model):
         if not isinstance(layer, layers.BatchNormalization):
             layer.trainable = True
 
-    lr_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=0.01,
-        decay_steps=5,
-        decay_rate=0.5)
-
     losses = {
         'output_1': 'categorical_crossentropy',
         'output_2': 'binary_crossentropy',
@@ -118,6 +108,6 @@ def unfreeze_last_block(model):
 
     model.compile(loss=losses,
                   optimizer=mixed_precision.LossScaleOptimizer(optimizers.Adam(
-                      learning_rate=lr_schedule)),
+                      learning_rate=0.0001)),
                   metrics=['accuracy'])
     return model
