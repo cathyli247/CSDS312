@@ -73,6 +73,7 @@ def input_pipeline():
 
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    options.experimental_optimization.apply_default_optimizations = True
     train_dataset = train_dataset.with_options(options)
     validation_dataset = validation_dataset.with_options(options)
 
@@ -103,6 +104,7 @@ dataset = tf.data.Dataset.from_tensor_slices(
                                                  deterministic=True).prefetch(UNFREEZED_BATCH_SIZE * 2).cache()
 options = tf.data.Options()
 options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+options.experimental_optimization.apply_default_optimizations = True
 dataset = dataset.with_options(options)
 
 print(
