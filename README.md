@@ -1,6 +1,6 @@
-# CSDS 312 (2022 Spring) Semester Project
+## CSDS 312 (2022 Spring) Semester Project - Eye Disease Detection
 
-## Team 5
+### Team 5
 
 _The project is fully coded in Python._
 
